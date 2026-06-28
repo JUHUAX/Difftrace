@@ -1,0 +1,18 @@
+# 编译输出
+obj-intel64/*.o
+obj-intel64/*.so
+
+# 运行时日志
+*.log
+taint_record.log
+pin.log
+pintool.log
+
+# 临时文件
+*.tmp
+*.swp
+*~
+
+# 备份文件
+*.bak
+*.backup

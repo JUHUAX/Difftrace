@@ -1,0 +1,25 @@
+##############################################################
+#
+# Custom build rules for pintool with multiple source files
+#
+##############################################################
+
+# 定义主工具
+TEST_TOOL_ROOTS := pintool
+
+# 定义工具需要链接的额外对象文件
+TOOL_ROOTS :=
+
+# 定义额外的对象文件源
+OBJECT_ROOTS := config logger instrumentation nethook
+
+# 定义其他测试等
+TEST_ROOTS :=
+APP_ROOTS :=
+SA_TOOL_ROOTS :=
+DLL_ROOTS :=
+LIB_ROOTS :=
+
+# 禁用某些测试
+SANITY_SUBSET :=
+

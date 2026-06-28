@@ -1,0 +1,51 @@
+{
+  "coarse_tags": [
+    "identifier",
+    "length_or_count",
+    "control_or_flags",
+    "addressing",
+    "data_value",
+    "other_or_unknown"
+  ],
+  "fieldhunter": {
+    "MSG-Len": "length_or_count",
+    "MSG-Type": "control_or_flags",
+    "Host-ID": "identifier",
+    "Session-ID": "identifier",
+    "Trans-ID": "identifier",
+    "Accumulator": "data_value"
+  },
+  "binaryinferno": {
+    "Length": "length_or_count",
+    "Sequence": "identifier",
+    "Checksum": "identifier",
+    "Float": "data_value",
+    "FieldFixed": "other_or_unknown",
+    "FieldVar": "data_value",
+    "FieldRep": "data_value"
+  },
+  "binpre_types": {
+    "Static": "identifier",
+    "Group": "other_or_unknown",
+    "String": "data_value",
+    "Integer": "data_value",
+    "Bit Field": "data_value",
+    "Bytes": "data_value"
+  },
+  "binpre_functions": {
+    "Command": "control_or_flags",
+    "Length": "length_or_count",
+    "Delim": "control_or_flags",
+    "CheckSum": "data_value",
+    "Aligned": "data_value",
+    "Filename": "data_value"
+  },
+  "notes": [
+    "This mapping is fixed before unified evaluation.",
+    "FSIBP cluster IDs are intentionally absent: one cluster can mix several coarse semantic tags.",
+    "Unknown source labels must map to other_or_unknown rather than being guessed during evaluation.",
+    "BinPRE Static is mapped to identifier and Aligned is mapped to data_value by experiment convention; their source-code meanings are broader than those coarse tags.",
+    "BinPRE CheckSum and Filename are mapped to data_value by experiment convention.",
+    "BinPRE artifact label Bit Field corresponds to the paper's Integer semantic type; it does not mean bit-level field-boundary inference."
+  ]
+}
