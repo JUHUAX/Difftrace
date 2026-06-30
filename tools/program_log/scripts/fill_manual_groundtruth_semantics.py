@@ -39,13 +39,13 @@ DEFAULT_BACKUP_DIR = Path(
 )
 DEFAULT_RETRY_DELAY_SECONDS = 30 * 60
 DEFAULT_WORKERS = 5
-DEFAULT_BASE_URL = "https://api.deepseek.com"
-DEFAULT_MODEL = "deepseek-v4-pro"
+DEFAULT_BASE_URL = None
+DEFAULT_MODEL = "gpt-5.5"
 DEFAULT_TEMPERATURE = 0.0
 DEFAULT_TOP_P = 1.0
 
-# Keep API backend aligned with other program-log/stage4 scripts.
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
+# Manual program-log semantic completion follows the PG-generation backend.
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 LOG_LOCK = threading.Lock()
 PRINT_LOCK = threading.Lock()
@@ -184,13 +184,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--codex-command", default="codex")
     parser.add_argument("--codex-model", default=None)
     parser.add_argument("--codex-cwd", type=Path, default=Path("/root"))
-    parser.add_argument("--api-base-url", default=DEFAULT_BASE_URL)
+    parser.add_argument(
+        "--api-base-url",
+        default=DEFAULT_BASE_URL,
+        help="Optional OpenAI-compatible API base URL. Default: use the OpenAI SDK default.",
+    )
     parser.add_argument("--api-key", default=None)
     parser.add_argument("--api-model", default=DEFAULT_MODEL)
     parser.add_argument("--api-reasoning-effort", default="high")
     parser.add_argument("--api-temperature", type=float, default=DEFAULT_TEMPERATURE)
     parser.add_argument("--api-top-p", type=float, default=DEFAULT_TOP_P)
-    parser.add_argument("--api-thinking", choices=["enabled", "disabled"], default="enabled")
     parser.add_argument("--api-timeout", type=float, default=600.0)
     return parser.parse_args()
 
@@ -323,9 +326,9 @@ def build_prompt(log_text: str, fields: list[dict[str, Any]]) -> str:
 
 
 def get_api_key(args: argparse.Namespace) -> str:
-    api_key = args.api_key or DEEPSEEK_API_KEY or os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    api_key = args.api_key or OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError("missing API key")
+        raise RuntimeError("missing API key: set env OPENAI_API_KEY or pass --api-key")
     return api_key
 
 
@@ -335,15 +338,19 @@ def run_api(prompt: str, args: argparse.Namespace) -> str:
     except ImportError as exc:
         raise RuntimeError("missing Python package: install openai to use --backend api") from exc
 
-    client = OpenAI(api_key=get_api_key(args), base_url=args.api_base_url, timeout=args.api_timeout)
-    response = client.chat.completions.create(
-        model=args.api_model,
-        messages=[{"role": "user", "content": prompt}],
-        reasoning_effort=args.api_reasoning_effort,
-        temperature=args.api_temperature,
-        top_p=args.api_top_p,
-        extra_body={"thinking": {"type": args.api_thinking}},
-    )
+    client_kwargs = {"api_key": get_api_key(args), "timeout": args.api_timeout}
+    if args.api_base_url:
+        client_kwargs["base_url"] = args.api_base_url
+    client = OpenAI(**client_kwargs)
+    request_kwargs = {
+        "model": args.api_model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": args.api_temperature,
+        "top_p": args.api_top_p,
+    }
+    if args.api_reasoning_effort:
+        request_kwargs["reasoning_effort"] = args.api_reasoning_effort
+    response = client.chat.completions.create(**request_kwargs)
     return response.choices[0].message.content or ""
 
 

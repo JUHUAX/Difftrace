@@ -36,13 +36,13 @@ DEFAULT_RUN_LOG = Path(
 )
 DEFAULT_RETRY_DELAY_SECONDS = 30 * 60
 DEFAULT_WORKERS = 5
-DEFAULT_BASE_URL = "https://api.deepseek.com"
-DEFAULT_MODEL = "deepseek-v4-pro"
+DEFAULT_BASE_URL = os.environ.get("MIMO_API_BASE_URL")
+DEFAULT_MODEL = "MiMo-V2.5-Pro"
 DEFAULT_TEMPERATURE = 0.0
 DEFAULT_TOP_P = 1.0
 
-# Keep aligned with the other RQ2-B/Stage4 LLM scripts.
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
+# Program-log pairwise judging uses MiMo by default.
+MIMO_API_KEY = os.environ.get("MIMO_API_KEY")
 
 VALID_VERDICTS = {
     "same_behavior",
@@ -223,7 +223,7 @@ def parse_args() -> argparse.Namespace:
         "--backend",
         choices=["api", "codex"],
         default="api",
-        help="LLM backend. Default: api (DeepSeek-compatible OpenAI API). Use codex only when Codex CLI is available.",
+        help="LLM backend. Default: api (OpenAI-compatible API). Use codex only when Codex CLI is available.",
     )
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     parser.add_argument("--limit", type=int, default=None)
@@ -249,20 +249,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--codex-command", default="codex")
     parser.add_argument("--codex-model", default=None)
     parser.add_argument("--codex-cwd", type=Path, default=Path("/root"))
-    parser.add_argument("--api-base-url", default=DEFAULT_BASE_URL)
+    parser.add_argument(
+        "--api-base-url",
+        default=DEFAULT_BASE_URL,
+        help="Optional OpenAI-compatible API base URL. Default: env MIMO_API_BASE_URL.",
+    )
     parser.add_argument("--api-key", default=None)
     parser.add_argument("--api-model", default=DEFAULT_MODEL)
-    parser.add_argument("--api-reasoning-effort", default="high")
+    parser.add_argument("--api-reasoning-effort", default=None)
     parser.add_argument("--api-temperature", type=float, default=DEFAULT_TEMPERATURE)
     parser.add_argument("--api-top-p", type=float, default=DEFAULT_TOP_P)
-    parser.add_argument("--api-thinking", choices=["enabled", "disabled"], default="enabled")
     parser.add_argument("--api-timeout", type=float, default=600.0)
     parser.add_argument(
         "--no-neutral-equivalence-rules",
         action="store_true",
         help=(
             "Disable the optional neutral equivalence examples in the judge prompt. "
-            "By default they are included, matching the V4-style judge prompt."
+            "By default they are included, matching the pairwise-judge prompt."
         ),
     )
     return parser.parse_args()
@@ -552,9 +555,9 @@ def run_codex(prompt: str, args: argparse.Namespace) -> str:
 
 
 def get_api_key(args: argparse.Namespace) -> str:
-    api_key = args.api_key or DEEPSEEK_API_KEY or os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    api_key = args.api_key or MIMO_API_KEY or os.environ.get("MIMO_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError("missing API key: fill DEEPSEEK_API_KEY, set env DEEPSEEK_API_KEY, or pass --api-key")
+        raise RuntimeError("missing API key: set env MIMO_API_KEY or pass --api-key")
     return api_key
 
 
@@ -563,15 +566,19 @@ def run_api(prompt: str, args: argparse.Namespace) -> str:
         from openai import OpenAI
     except ImportError as exc:
         raise RuntimeError("missing Python package: install openai to use --backend api") from exc
-    client = OpenAI(api_key=get_api_key(args), base_url=args.api_base_url, timeout=args.api_timeout)
-    response = client.chat.completions.create(
-        model=args.api_model,
-        messages=[{"role": "user", "content": prompt}],
-        reasoning_effort=args.api_reasoning_effort,
-        temperature=args.api_temperature,
-        top_p=args.api_top_p,
-        extra_body={"thinking": {"type": args.api_thinking}},
-    )
+    client_kwargs = {"api_key": get_api_key(args), "timeout": args.api_timeout}
+    if args.api_base_url:
+        client_kwargs["base_url"] = args.api_base_url
+    client = OpenAI(**client_kwargs)
+    request_kwargs = {
+        "model": args.api_model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": args.api_temperature,
+        "top_p": args.api_top_p,
+    }
+    if args.api_reasoning_effort:
+        request_kwargs["reasoning_effort"] = args.api_reasoning_effort
+    response = client.chat.completions.create(**request_kwargs)
     return response.choices[0].message.content or ""
 
 

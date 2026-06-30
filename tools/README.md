@@ -65,4 +65,7 @@ python tools/program_log/scripts/run_program_log_pairwise_judge.py \
   --backend api
 ```
 
-LLM-backed scripts use `DEEPSEEK_API_KEY` or an explicit `--api-key` argument.
+LLM-backed program-log scripts use different default backends by task:
+
+- PG generation scripts use `gpt-5.5` and read `OPENAI_API_KEY` or an explicit `--api-key`.
+- The pairwise judge uses `MiMo-V2.5-Pro` and reads `MIMO_API_KEY` or an explicit `--api-key`; set `MIMO_API_BASE_URL` or pass `--api-base-url` if the provider requires a custom endpoint.

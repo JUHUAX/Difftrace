@@ -21,10 +21,13 @@ The code is primarily Python plus a C++ Intel Pin pintool. A typical environment
 - TShark/Wireshark command-line tools for TShark-based parsing.
 - Intel Pin installed separately. See `pintool/README.md`.
 
-LLM-backed scripts read credentials from environment variables, for example:
+LLM-backed scripts read credentials from environment variables according to their role:
 
 ```bash
-export DEEPSEEK_API_KEY=<your-api-key>
+export OPENAI_API_KEY=<your-openai-api-key>       # program-log ground-truth generation, default model gpt-5.5
+export MIMO_API_KEY=<your-mimo-api-key>           # program-log pairwise judge, default model MiMo-V2.5-Pro
+export MIMO_API_BASE_URL=<your-mimo-base-url>     # required when the MiMo provider uses a custom OpenAI-compatible endpoint
+export DEEPSEEK_API_KEY=<your-deepseek-api-key>   # DiffTrace semantic generation, default model deepseek-v4-pro
 ```
 
 ## Typical workflow
