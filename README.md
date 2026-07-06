@@ -17,9 +17,15 @@ The code is primarily Python plus a C++ Intel Pin pintool. A typical environment
 
 - Linux x86-64.
 - Python 3.8+.
-- Python packages used by the scripts, such as `numpy`, `pandas`, `scikit-learn`, `torch`, and an OpenAI-compatible client package for LLM-backed scripts.
+- Python packages listed in `requirements.txt`.
 - TShark/Wireshark command-line tools for TShark-based parsing.
 - Intel Pin installed separately. See `pintool/README.md`.
+
+Install Python dependencies from the artifact root:
+
+```bash
+pip install -r requirements.txt
+```
 
 LLM-backed scripts read credentials from environment variables according to their role:
 

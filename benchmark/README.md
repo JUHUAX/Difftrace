@@ -17,9 +17,11 @@ The directory contains client/server binaries used to generate and replay protoc
 
 ## `scripts/`
 
-- `capture_bidirectional_protocol_pcaps.sh`: runs benchmark client/server communication and captures bidirectional traffic.
-- `regenerate_protocol_pcaps.sh`: regenerates protocol pcaps from benchmark client/server runs.
-- `bacnet_client.sh`: helper wrapper for BACnet client execution.
+- `regenerate_protocol_pcaps.sh`: regenerates the main experimental pcaps. It starts each benchmark server, runs the corresponding client, and captures only client-to-server payload traffic. The resulting one-way pcaps are the inputs used by the main DiffTrace evaluation pipeline.
+- `capture_bidirectional_protocol_pcaps.sh`: captures full bidirectional client/server traffic. These pcaps include both requests and responses, and are mainly useful for debugging, inspecting complete protocol conversations, or running tools that require full-session context.
+- `bacnet_client.sh`: BACnet-specific client wrapper. It repeatedly runs `bacnet_coverage_client` to trigger more BACnet services and message formats during pcap generation.
+
+Note: these scripts preserve the absolute paths used in our original experimental environment, such as `/root/semvec/bitfield_groundtruth`. Before rerunning them in a different artifact location, update the `BASE`, binary, and output paths in the scripts, or adapt them to your local directory layout.
 
 Example workflow:
 
@@ -28,7 +30,11 @@ cd /root/semvec/data_avaliable/benchmark
 bash scripts/regenerate_protocol_pcaps.sh
 ```
 
-If the scripts are moved to a different directory, update binary paths in the script or pass explicit paths where supported.
+For debugging full conversations, use:
+
+```bash
+bash scripts/capture_bidirectional_protocol_pcaps.sh all
+```
 
 ## Protocol sources
 

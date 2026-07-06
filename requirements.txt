@@ -1,0 +1,7 @@
+numpy
+pandas
+torch
+openai
+scapy
+sentence-transformers
+tabulate

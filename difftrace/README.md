@@ -58,10 +58,7 @@ Stage 3 converts field behavior summaries into low-dimensional field representat
 - `filter_stage3_transparent_fields.py`: filters fields with little observable execution difference.
 - `build_stage3_training_matrix.py`: normalizes features and creates train/eval matrices.
 - `train_stage3_autoencoder.py`: trains and applies autoencoders.
-- `train_stage3_pca.py`: PCA helper/baseline.
-- `analyze_stage3_latent_space.py`, `visualize_stage3_latent_space.py`, `find_stage3_neighbors.py`: representation-space analysis helpers.
-- `check_stage3_dataset.py`, `observe_stage3_dataset.py`: dataset inspection helpers.
-- `basic_visual_analysis.py`, `analyze_latent_space_structure.py`, `train_unsupervised_v1.py`, `probe_latent_space_v1.py`, `infer_field_role_v1.py`: auxiliary inspection scripts.
+- `check_stage3_dataset.py`: checks Stage 3 datasets and defines the shared 28-D feature columns used by the matrix builder and autoencoder.
 
 ### `stage4/`: semantic interpretation and aggregation
 

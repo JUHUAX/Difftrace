@@ -55,6 +55,12 @@ python tools/sota_evaluation/scripts/evaluate_boundary_predictions.py \
 
 Use `--help` on each script for concrete path options.
 
+Expected outputs:
+
+- DiffTrace replay outputs under `<difftrace_output_dir>/`, including per-packet field files such as `fields.json`, `bitfields.json`, mutation records, and execution-difference reports.
+- TShark-derived field views under `<tshark_output_dir>/`, used as TG boundary ground truth.
+- Boundary metric summaries under `<rq1_metrics_dir>/`, typically including `field_boundary_metrics_summary.json` and readable comparison Markdown files.
+
 ## RQ2: field program-semantic inference
 
 RQ2 evaluates field semantic inference under unified traditional labels and program-log semantic agreement. The reproduction workflow is:
@@ -106,6 +112,12 @@ python tools/program_log/scripts/run_program_log_pairwise_judge.py \
   --backend api
 ```
 
+Expected outputs:
+
+- Stage 3 representation files, including `stage3_training_matrix.csv`, autoencoder embeddings such as `ae_embeddings.csv`, and training summaries.
+- Stage 4 semantic files, including `z_topk_probe_evidence.json`, `z_axis_semantics.json`, `field_semantic_profiles.jsonl`, and final semantic vectors/profiles.
+- Evaluation outputs, including traditional-label accuracy summaries and pairwise-judge results such as `judge_results.csv`.
+
 ## RQ3: bitfield segmentation ablation
 
 Files under `RQ3/` evaluate variants of the bitfield segmentation module:
@@ -125,6 +137,12 @@ python experiments/RQ3/evaluate_rq3_bitfield_ablation.py \
   --help
 ```
 
+Expected outputs:
+
+- Ablation outputs under `<rq3_output_dir>/<mode>/`, where each mode contains per-packet `bitfields.json` files.
+- Generation metadata in `rq3_generation_manifest.json`.
+- Metric summaries under `<rq3_output_dir>/metrics/<mode>/`, plus `rq3_bitfield_ablation_summary.json` and `rq3_bitfield_ablation_summary.md`.
+
 ## RQ4: semantic representation ablation
 
 Files under `RQ4/` evaluate strategic grouping and low-dimensional representation learning:
@@ -143,3 +161,11 @@ python experiments/RQ4/run_rq4_shuffled_group_pipeline.py \
   --out-root <rq4_output_dir> \
   --backend api
 ```
+
+Expected outputs:
+
+- Shuffled-group datasets such as `stage3_dataset_semantic_fields.csv` and `rq4_shuffled_group_manifest.json`.
+- Shuffled pipeline artifacts under `<rq4_output_dir>/shuffled_seed_<seed>/`, including Stage 3 matrices, AE embeddings, dimension semantics, field profiles, and fused semantic outputs.
+- No-latent direct outputs such as `field_semantic_direct_profiles.jsonl` and `field_semantic_direct_vectors.csv`.
+- LLM-cost summaries such as `rq4_llm_usage_measurement.csv` and `rq4_llm_usage_measurement_summary.json`.
+- Program-log judge summaries such as `rq4_program_log_judge_on_rq2b_eval_summary.csv`, per-protocol CSVs, and readable Markdown reports.
