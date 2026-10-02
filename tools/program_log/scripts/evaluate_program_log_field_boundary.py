@@ -6,11 +6,15 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, Set, Tuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from boundary_metrics import attach_paper_summary, merge_paper_metrics, packet_paper_metrics, write_paper_report
 
 
 ROOT = Path("/root/semvec/bitfield_groundtruth")
@@ -416,6 +420,7 @@ def compare_one_packet(gt: PacketGroundtruth, replay_root: Path) -> dict[str, An
         "protocol": gt.protocol,
         "packet_dir": gt.sample_id,
         "payload_len": payload_len,
+        "paper_metrics": packet_paper_metrics(gt_fields, pred_fields, gt_bits, pred_bits, payload_len),
         "field_boundary": field,
         "field_boundary_hit": field_boundary_hit,
         "bitfield_detection": bitfield,
@@ -487,6 +492,7 @@ def summarize_packets(protocol: str, packets: list[dict[str, Any]]) -> dict[str,
     return {
         "protocol": protocol,
         "packet_count": len(packets),
+        "paper_metrics": merge_paper_metrics(packet["paper_metrics"] for packet in packets),
         "field_boundary": SetMetrics(**field_acc).to_dict(),
         "field_boundary_hit": SetMetrics(**field_boundary_hit_acc).to_dict(),
         "bitfield_detection": SetMetrics(**bit_acc).to_dict(),
@@ -766,7 +772,8 @@ def write_summary_markdown(summary: dict[str, Any], path: Path) -> None:
     lines = [
         "# Program-Log Field Boundary Evaluation Metrics",
         "",
-        "指标均不计算 TN；负例全集不能从实验结果或 LLM groundtruth 中可靠枚举。",
+        "V7主指标见 `field_boundary_v7_metrics.md`：Accuracy、F1-score和Perfection。",
+        "以下是兼容旧流程的诊断项，不计算TN，不应替代V7主指标。",
         "",
         "## Protocol Value Avg",
         "",
@@ -1028,6 +1035,8 @@ def main() -> None:
         },
     }
 
+    attach_paper_summary(summary)
+    write_paper_report(summary, args.outdir)
     (args.outdir / "field_boundary_metrics_summary.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",

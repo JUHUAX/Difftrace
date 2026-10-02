@@ -1,1 +1,3 @@
-README.zh-CN.md
+# Documentation is part of the artifact; generated Python caches are not.
+__pycache__/
+*.py[cod]

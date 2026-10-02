@@ -18,11 +18,12 @@ DEFAULT_FULL_INPUT = Path("/root/semvec/difftrace/stage4/out/stage4_field_profil
 DEFAULT_NO_LATENT_INPUT = Path("/root/semvec/difftrace/stage3/out/stage3_filtered/stage3_dataset_semantic_fields.csv")
 DEFAULT_OUTPUT_DIR = Path("/root/semvec/RQ4/out/llm_usage_measurement")
 DEFAULT_BASE_URL = "https://api.deepseek.com"
-DEFAULT_MODEL = "deepseek-v4-pro"
+DEFAULT_MODEL = "deepseek-v4.1-flash"
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 
-FULL_SCRIPT = Path("/root/semvec/difftrace/stage4/run_stage4_field_semantic_fusion.py")
-NO_LATENT_SCRIPT = Path("/root/semvec/RQ4/run_rq4_no_latent_direct_summary.py")
+ARTIFACT_ROOT = Path(__file__).resolve().parents[2]
+FULL_SCRIPT = ARTIFACT_ROOT / "difftrace/stage4/run_stage4_field_semantic_fusion.py"
+NO_LATENT_SCRIPT = Path(__file__).resolve().parent / "run_rq4_no_latent_direct_summary.py"
 
 
 def parse_args() -> argparse.Namespace:
@@ -30,7 +31,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--full-input", type=Path, default=DEFAULT_FULL_INPUT)
     parser.add_argument("--no-latent-input", type=Path, default=DEFAULT_NO_LATENT_INPUT)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument("--sample-size", type=int, default=10)
+    parser.add_argument("--sample-size", type=int, default=100,
+                        help="Number of shared fields; V7 uses 100. Use an explicit smaller size for a pilot.")
     parser.add_argument("--random-seed", type=int, default=0)
     parser.add_argument("--api-base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--api-key", default=None)
@@ -108,9 +110,45 @@ def flatten_usage(prefix: str, usage: dict[str, Any], row: dict[str, Any]) -> No
             row[f"{prefix}{key}"] = value
 
 
+def summarize_usage(records: list[dict[str, Any]], dry_run: bool = False) -> dict[str, Any]:
+    """Report per-field averages alongside totals, without estimating API tokens."""
+    summary = {}
+    keys = ("prompt_chars", "response_chars", "prompt_tokens", "completion_tokens",
+            "reasoning_tokens", "total_tokens", "prompt_cache_hit_tokens",
+            "prompt_cache_miss_tokens", "elapsed_seconds")
+    for method in sorted({row["method"] for row in records}):
+        rows = [row for row in records if row["method"] == method]
+        item: dict[str, Any] = {"calls": len(rows), "sampled_fields": len(rows),
+                                "measurement": "dry_run" if dry_run else "api"}
+        for key in keys:
+            values = [float(row[key]) for row in rows if row.get(key) is not None]
+            # A missing provider counter is unknown, not a measured zero.
+            total = sum(values) if len(values) == len(rows) else None
+            item[key] = total
+            item[f"avg_{key}"] = total / len(rows) if total is not None else None
+            item[f"reported_{key}_calls"] = len(values)
+        summary[method] = item
+    return summary
+
+
+def cost_markdown(summary: dict[str, Any]) -> str:
+    lines = ["# Average LLM Invocation Cost per Field", "",
+             "Each method uses the same sampled fields. Totals and reporting counts are retained in JSON. "
+             "Reasoning tokens are a subset of completion tokens and are not added to total tokens. "
+             "N/A denotes unreported API usage, including dry runs.", "",
+             "| Method | Fields | Avg. Prompt Tokens | Avg. Completion Tokens | Avg. Reasoning Tokens | Avg. Total Tokens | Avg. Seconds |",
+             "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    for method, item in summary.items():
+        values = ["N/A" if item[f"avg_{key}"] is None else f"{item[f'avg_{key}']:.2f}"
+                  for key in ("prompt_tokens", "completion_tokens", "reasoning_tokens", "total_tokens", "elapsed_seconds")]
+        lines.append(f"| {method} | {item['sampled_fields']} | " + " | ".join(values) + " |")
+    return "\n".join(lines) + "\n"
+
+
 def main() -> int:
     args = parse_args()
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+    if args.sample_size <= 0:
+        raise SystemExit("--sample-size must be positive")
 
     full_ns = runpy.run_path(str(FULL_SCRIPT), run_name="__rq4_usage_full__")
     no_ns = runpy.run_path(str(NO_LATENT_SCRIPT), run_name="__rq4_usage_no_latent__")
@@ -123,6 +161,10 @@ def main() -> int:
     common_uids = sorted(set(full_by_uid) & set(no_by_uid))
     if not common_uids:
         raise SystemExit("no common field_uid between Full and No-latent inputs")
+    if len(common_uids) < args.sample_size:
+        raise SystemExit(f"requested {args.sample_size} shared fields, but only {len(common_uids)} available; "
+                         "use an explicit --sample-size for a smaller pilot")
+    args.output_dir.mkdir(parents=True, exist_ok=True)
 
     rng = random.Random(args.random_seed)
     sample_uids = common_uids[:]
@@ -145,13 +187,15 @@ def main() -> int:
             }
             if args.dry_run:
                 row["response_chars"] = 0
-                row["elapsed_seconds"] = 0.0
+                row["elapsed_seconds"] = None
             else:
                 print(f"[measure] {index}/{len(sample_uids)} {method} {uid}")
                 response_text, usage, elapsed = call_api(prompt, args)
                 row["response_chars"] = len(response_text)
                 row["elapsed_seconds"] = round(elapsed, 3)
                 flatten_usage("", usage, row)
+                row["reasoning_tokens"] = row.get(
+                    "reasoning_tokens", row.get("completion_tokens_details.reasoning_tokens"))
             records.append(row)
 
     csv_path = args.output_dir / "rq4_llm_usage_measurement.csv"
@@ -166,6 +210,7 @@ def main() -> int:
         "elapsed_seconds",
         "prompt_tokens",
         "completion_tokens",
+        "reasoning_tokens",
         "total_tokens",
         "prompt_cache_hit_tokens",
         "prompt_cache_miss_tokens",
@@ -176,22 +221,10 @@ def main() -> int:
         writer.writeheader()
         writer.writerows(records)
 
-    summary = {}
-    for method in sorted({row["method"] for row in records}):
-        method_rows = [row for row in records if row["method"] == method]
-        summary[method] = {
-            "calls": len(method_rows),
-            "prompt_chars": sum(float(row.get("prompt_chars") or 0) for row in method_rows),
-            "response_chars": sum(float(row.get("response_chars") or 0) for row in method_rows),
-            "prompt_tokens": sum(float(row.get("prompt_tokens") or 0) for row in method_rows),
-            "completion_tokens": sum(float(row.get("completion_tokens") or 0) for row in method_rows),
-            "total_tokens": sum(float(row.get("total_tokens") or 0) for row in method_rows),
-            "prompt_cache_hit_tokens": sum(float(row.get("prompt_cache_hit_tokens") or 0) for row in method_rows),
-            "prompt_cache_miss_tokens": sum(float(row.get("prompt_cache_miss_tokens") or 0) for row in method_rows),
-            "elapsed_seconds": sum(float(row.get("elapsed_seconds") or 0) for row in method_rows),
-        }
+    summary = summarize_usage(records, dry_run=args.dry_run)
     summary_path = args.output_dir / "rq4_llm_usage_measurement_summary.json"
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    (args.output_dir / "rq4_llm_usage_measurement_summary.md").write_text(cost_markdown(summary), encoding="utf-8")
     print(f"[measure] wrote {csv_path}")
     print(f"[measure] wrote {summary_path}")
     print(json.dumps(summary, ensure_ascii=False, indent=2))

@@ -2,9 +2,19 @@
 
 This directory contains helper utilities for parsing traffic, evaluating baseline outputs, and running program-log-based analyses.
 
+Only code and label-mapping configuration are included: no TG/PG datasets, baseline predictions, judge outputs, or results. Run examples from the artifact root and replace every placeholder; unspecified defaults may still point to the original experiment environment.
+
+## V7 field-boundary metrics
+
+`boundary_metrics.py` computes byte/bit Accuracy, F1-score, and Perfection over all possible gap positions, including endpoints. Perfection requires both reference-field endpoints and no extra interior predicted boundary. Bit evaluation preserves parent identity and uses the union of reference/predicted parents as its candidate domain, retaining prediction-only parents.
+
+TG/PG evaluators expose `paper_metrics` and `field_boundary_v7_metrics.csv/.md`; legacy scores are diagnostic. The SOTA main table/CSV exposes Accuracy, F1-score, and Perfection. `Protocol Value Avg` averages protocols with reference fields at that granularity; `Overall Micro` pools counts. Do not mix them. Protocols without reference bit fields are excluded from bit-table averages; legacy Macro diagnostics are not the paper table.
+
+Inputs and annotations are supplied at runtime, not bundled. `update_manifest.py` updates/checks the list without Git internals or caches.
+
 ## Ground-truth construction workflows
 
-The paper uses two complementary ground-truth datasets: TShark-derived ground truth (TG) and Program-log-derived ground truth (PG). The utilities in this directory can be used as follows.
+The paper uses complementary references: TShark-derived ground truth (TG) and program-log reference annotations (PG). TG reflects protocol parsing; PG complements it with observed consumption in a concrete implementation, not unique protocol-specification truth. Use the utilities as follows.
 
 ### Build TShark-derived ground truth (TG)
 
@@ -104,6 +114,8 @@ python tools/tshark/field_boundary/generate_groundtruthA_tshark.py \
 
 SOTA evaluation utilities normalize baseline outputs and compute shared metrics.
 
+They do not bundle implementations of all seven baselines; provide each tool's outputs separately. Fixed mapping follows source-label meanings/keywords. Unified labels are `identifier`, `length_or_count`, `control_or_flags`, `addressing`, `data_value`, and `other_or_unknown`.
+
 - `config/semantic_label_mapping.json`: unified coarse-grained semantic label mapping.
 - `scripts/export_boundary_predictions.py`: exports boundary predictions into the common format.
 - `scripts/export_tshark_boundary_groundtruth.py`: exports TShark-derived boundary data.
@@ -138,12 +150,18 @@ Example:
 ```bash
 python tools/program_log/scripts/run_program_log_pairwise_judge.py \
   --program-log-jsonl <program_log_semantics.jsonl> \
-  --stage4-profiles <field_semantic_profiles.jsonl> \
+  --stage4-profiles <field_semantic_fused_profiles.jsonl> \
   --output-csv <judge_results.csv> \
+  --output-md <judge_report.md> \
+  --run-log <judge_run_log.jsonl> \
   --backend api
 ```
 
 LLM-backed program-log scripts use different default backends by task:
 
 - PG generation scripts use `gpt-5.5` and read `OPENAI_API_KEY` or an explicit `--api-key`.
-- The pairwise judge uses `MiMo-V2.5-Pro` and reads `MIMO_API_KEY` or an explicit `--api-key`; set `MIMO_API_BASE_URL` or pass `--api-base-url` if the provider requires a custom endpoint.
+- The pairwise judge uses `MiMo-V2.6-flash` and reads `MIMO_API_KEY` or an explicit `--api-key`; set `MIMO_API_BASE_URL` or pass `--api-base-url` if the provider requires a custom endpoint.
+
+Here `--stage4-profiles` must point to fused outputs containing final field program semantics, not the profile containing only activated-axis explanations. `same_behavior` plus `mostly_same_behavior` forms Strong Agreement; adding `weakly_same_behavior` gives Any Overlap. `different_behavior` and `insufficient_information` contribute to neither.
+
+LLM commands incur API costs. Do not assume the PG builder or judge supports `--dry-run`; use it only where implemented. Judge `--report-only` reports existing results without rerunning judgments. Aggregate five-verdict outputs with `../experiments/RQ4/summarize_program_log_judge_on_rq2b_eval.py`. PG candidate generation does not establish completion of the paper's manual review.

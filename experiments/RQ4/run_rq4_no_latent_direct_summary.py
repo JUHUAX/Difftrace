@@ -35,7 +35,7 @@ DEFAULT_RESPONSES = DEFAULT_OUT_DIR / "field_semantic_direct_prompt_responses.md
 DEFAULT_RUN_LOG = DEFAULT_OUT_DIR / "field_semantic_direct_run.log"
 
 DEFAULT_BASE_URL = "https://api.deepseek.com"
-DEFAULT_MODEL = "deepseek-v4-pro"
+DEFAULT_MODEL = "deepseek-v4.1-flash"
 DEFAULT_TEMPERATURE = 0.0
 DEFAULT_TOP_P = 1.0
 DEFAULT_WORKERS = 5

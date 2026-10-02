@@ -2,12 +2,24 @@
 
 This directory contains the core DiffTrace implementation. It is organized by pipeline stage and can be used to run the full workflow from protocol traffic and a benchmark binary to byte/bit field boundaries and field program-semantic descriptions.
 
+Only code/documentation is included: no packets, traces, training matrices, AE weights, or semantic outputs. Commands describe data flow and interfaces; they are not an independently validated turnkey workflow.
+
+## Mapping to V7 method stages
+
+| V7 section | Main code |
+| --- | --- |
+| Stage 1: fine-grained field segmentation | `stage1/` and `../pintool/` |
+| Stage 2: strategic execution-difference computation | `stage2/`; `stage3/build_stage3_dataset.py` collects its field summaries |
+| Stage 3: field program-semantic representation | AE learning in `stage3/`, followed by interpretation/aggregation in `stage4/` |
+
+Six statistics per strategy group across four groups, plus four context features, form the 28-D summary. Per-perturbation 9-D differences are not direct AE inputs. Code Stage 4 is not an additional paper stage.
+
 ## Runtime setup
 
 Run commands from the artifact root and expose the stage directories through `PYTHONPATH`:
 
 ```bash
-cd /root/semvec/data_avaliable
+cd /path/to/artifact
 export PYTHONPATH=$PWD/difftrace/common:$PWD/difftrace/stage1:$PWD/difftrace/stage2:$PWD/difftrace/stage3:$PWD/difftrace/stage4:$PYTHONPATH
 ```
 
@@ -62,7 +74,7 @@ Stage 3 converts field behavior summaries into low-dimensional field representat
 
 ### `stage4/`: semantic interpretation and aggregation
 
-Stage 4 implements representation-dimension interpretation and field program-semantic aggregation. It corresponds to the semantic-representation part of Stage 3 in the paper.
+Stage 4 implements the last two parts of paper Stage 3: dimension interpretation and field program-semantic aggregation. Spearman evidence selection defaults to up to five features per positive/negative direction with absolute correlation at least 0.30; activation thresholds are the top/bottom 20%.
 
 - `build_stage4_latent_names.py`: computes correlations between representation dimensions and behavior-summary probes.
 - `run_stage4_llm_naming.py`: queries an LLM to name/define representation-dimension semantics.
@@ -122,19 +134,23 @@ python difftrace/stage3/build_stage3_training_matrix.py \
   --output-dir <stage3-matrix-dir>
 ```
 
+This command does not define an external held-out set. For RQ2's 70%/30% packet split, first prepare the manifest produced by `stage4/generate_heldout_packet_split.py`, then pass `--split-manifest <split.json>` to the matrix builder; its scaler fits the training partition only. The AE's internal 10% validation split is not the RQ2 held-out set.
+
 ### 3. Train/project the low-dimensional representation space
 
 Train autoencoders and project fields into the learned representation space:
 
 ```bash
 python difftrace/stage3/train_stage3_autoencoder.py \
-  --input-csv <stage3-matrix-dir>/stage3_training_matrix.csv \
+  --input-csv <stage3-matrix-dir>/stage3_training_matrix_train.csv \
   --projection-csv <stage3-matrix-dir>/stage3_training_matrix.csv \
   --output-dir <stage3-ae-dir> \
   --latent-dims 8
 ```
 
-The output directory contains representation embeddings used by Stage 4.
+`ae_embeddings.csv` corresponds to the projection matrix; `train_ae_embeddings.csv` corresponds to training rows. `--eval-csv` additionally produces `eval_ae_embeddings.csv`. Histories, reconstruction errors, and checkpoints are runtime outputs, not bundled files.
+
+The default encoder is 28→16→12→d with a symmetric decoder, ReLU hidden layers, and Sigmoid output. Defaults are MSE, Adam, 150 epochs, batch size 128, learning rate 0.001, weight decay 0.00001, and seed 1337. The script defaults to comparing 4/8/12 dimensions; the example explicitly uses V7's 8-D configuration without asserting experimentally verified optimality.
 
 ### 4. Interpret representation dimensions
 
@@ -142,8 +158,8 @@ Compute probe correlations and prepare evidence for LLM-based dimension interpre
 
 ```bash
 python difftrace/stage4/build_stage4_latent_names.py \
-  --embeddings <stage3-ae-dir>/ae_latent8/ae_embeddings.csv \
-  --training-matrix <stage3-matrix-dir>/stage3_training_matrix.csv \
+  --embeddings <stage3-ae-dir>/ae_latent8/train_ae_embeddings.csv \
+  --training-matrix <stage3-matrix-dir>/stage3_training_matrix_train.csv \
   --out-dir <stage4-latent-dir>
 ```
 
@@ -157,7 +173,7 @@ python difftrace/stage4/run_stage4_llm_naming.py \
   --api-key $DEEPSEEK_API_KEY
 ```
 
-Use `--dry-run` to preview prompts without calling the API.
+Use `--dry-run` to preview prompts without API calls. This call and field fusion default to `deepseek-v4.1-flash`, temperature 0, top-p 1, and no sampling seed. Complete prompts are in their Python files, not dependent on an external prompt image.
 
 ### 5. Build field profiles and generate field program semantics
 
@@ -166,6 +182,7 @@ Build field-level activated-dimension profiles:
 ```bash
 python difftrace/stage4/build_stage4_field_profiles.py \
   --embeddings <stage3-ae-dir>/ae_latent8/ae_embeddings.csv \
+  --threshold-embeddings <stage3-ae-dir>/ae_latent8/train_ae_embeddings.csv \
   --axis-semantics <stage4-latent-dir>/z_axis_semantics.json \
   --out-dir <stage4-profile-dir>
 ```
@@ -181,11 +198,19 @@ python difftrace/stage4/run_stage4_field_semantic_fusion.py \
   --api-key $DEEPSEEK_API_KEY
 ```
 
-The final outputs are field-level program-semantic descriptions and vectors that can be evaluated with scripts under `tools/`.
+Final outputs include program-semantic descriptions, coarse comparison labels, and auxiliary scores. The 8-D representations remain in AE embedding files. Evaluate semantic outputs with `../tools/`; mappings are in `../tools/sota_evaluation/config/semantic_label_mapping.json`.
+
+## New inputs and implementation limitations
+
+`--threshold-embeddings` calibrates profiles against an existing reference embedding distribution. Omitting it ranks the current input fields themselves; doing so on a single new packet is not fixed-space inference. The scaler, AE, axis interpretations, and reference distribution must come from the same space construction.
+
+`train_stage3_autoencoder.py --projection-csv` encodes another matrix after training in the current run; it is not a standalone checkpoint-loading inference entry point. Complete fixed-space inference for a new private protocol remains to be organized and validated. Also, `relative_start` measures packet-relative position, but its description in `build_stage4_latent_names.py` still incorrectly denotes first-consumption position.
+
+Some defaults, `common.py`'s pintool path, and `run_frozen_stage2_protocol.sh` retain original workspace paths. The frozen helper also invokes an external script. Check these dependencies when relocating; setting `PYTHONPATH` alone does not remove them.
 
 ## Debugging tips
 
 - Run any script with `--help` to inspect path options.
-- Use `--limit`, `--samples`, or protocol-specific filters where available for small debugging runs.
+- The main driver uses `--sample-count`; dataset construction uses `--samples`/`--limit-samples`, while field fusion uses `--limit`. Options are not interchangeable between scripts.
 - Use LLM scripts with `--dry-run` first to verify prompt construction.
 - If imports fail, check that `PYTHONPATH` includes all `difftrace/` stage directories as shown above.

@@ -22,18 +22,13 @@ DEFAULT_GT_JSONL = (
     / "eval"
     / "program_log_groundtruth_candidates.jsonl"
 )
-DEFAULT_EVALUATOR = (
-    SEMVEC_ROOT
-    / "bitfield_groundtruth"
-    / "evaluation_from_program_log"
-    / "scripts"
-    / "evaluate_program_log_field_boundary.py"
-)
+DEFAULT_EVALUATOR = (Path(__file__).resolve().parents[2] / "tools/program_log/scripts"
+                     / "evaluate_program_log_field_boundary.py")
 MODES = ("operation_driven", "flat_evidence", "full")
 DISPLAY_NAMES = {
     "operation_driven": "Operation-Driven Recovery",
     "flat_evidence": "Flat Evidence Aggregation",
-    "full": "Full TCBR",
+    "full": "Full",
 }
 
 
@@ -53,7 +48,14 @@ def load_json(path: Path) -> Any:
 
 def metric_values(summary: dict) -> dict[str, float]:
     overall = summary["overall"]
+    paper = summary.get("protocol_value_average", {}).get("paper_metrics", {}).get("bit")
+    if paper is None or paper["protocol_count"] == 0:
+        raise ValueError("No V7 bit metrics: rerun the updated evaluator on reference bit fields.")
     return {
+        "accuracy": paper["accuracy"],
+        "f1_score": paper["f1"],
+        "perfection": paper["perfection"],
+        "protocol_count": paper["protocol_count"],
         "bitfield_precision": overall["bitfield_detection"]["precision"],
         "bitfield_recall": overall["bitfield_detection"]["recall"],
         "bitfield_f1": overall["bitfield_detection"]["f1"],
@@ -74,14 +76,14 @@ def markdown(rows: list[dict[str, Any]], manifest: dict) -> str:
         "",
         "## 准确率对比",
         "",
-        "| 实验组 | Bitfield Precision | Bitfield Recall | Bitfield F1 | Subfield Precision | Subfield Recall | Subfield F1 | Exact Partition Recall |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|",
+        "沿用RQ1的边界指标；表中为有参考bit字段的协议的算术平均，旧指标仅保留为JSON诊断项。",
+        "",
+        "| 实验组 | Accuracy | F1-score | Perfection |",
+        "|---|---:|---:|---:|",
     ]
     for row in rows:
         lines.append(
-            f"| {row['display_name']} | {fmt(row['bitfield_precision'])} | {fmt(row['bitfield_recall'])} | "
-            f"{fmt(row['bitfield_f1'])} | {fmt(row['subfield_precision'])} | {fmt(row['subfield_recall'])} | "
-            f"{fmt(row['subfield_f1'])} | {fmt(row['exact_partition_recall'])} |"
+            f"| {row['display_name']} | {fmt(row['accuracy'])} | {fmt(row['f1_score'])} | {fmt(row['perfection'])} |"
         )
 
     lines.extend([
@@ -106,8 +108,8 @@ def markdown(rows: list[dict[str, Any]], manifest: dict) -> str:
         "## 说明",
         "",
         "- `Operation-Driven Recovery`：仅使用局部位操作证据恢复候选，不使用后续消费路径辅助确认。",
-        "- `Flat Evidence Aggregation`：保留完整事件收集，但跳过层次化证据裁决与伪边界回退。",
-        "- `Full TCBR`：执行轨迹引导的消费感知位字段恢复完整方法。",
+        "- `Flat Evidence Aggregation`：扫描完整轨迹并收集消费事件，但不再根据指令证据强弱裁决候选边界。",
+        "- `Full`：位级消费追踪与指令证据裁决的完整流程。",
         "- 准确率评估复用 program-log 字段划分 groundtruth。",
         "",
     ])

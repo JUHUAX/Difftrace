@@ -7,10 +7,14 @@ import argparse
 import csv
 import json
 import re
+import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Tuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from boundary_metrics import average_metrics, byte_metrics, merge_metrics
 
 
 ROOT = Path("/root/semvec/bitfield_groundtruth")
@@ -126,6 +130,7 @@ def packet_metrics(row: dict[str, Any], gt: set[Range]) -> dict[str, Any]:
         "pred_fields": len(pred),
         "exact": exact,
         "boundary": boundary,
+        "paper_metrics": byte_metrics(gt, pred, payload_length),
         "coverage_bytes": covered_bytes(pred, payload_length),
         "over_segmentation": len(pred_internal - gt_internal),
         "under_segmentation": len(gt_internal - pred_internal),
@@ -156,6 +161,7 @@ def summarize(rows: list[dict[str, Any]], label: str) -> dict[str, Any]:
         "evaluable_rate": ratio(evaluable, len(rows)),
         "exact": exact.metrics(),
         "boundary": boundary.metrics(),
+        "paper_metrics": merge_metrics(row["paper_metrics"] for row in rows),
         "coverage": ratio(coverage_bytes, payload_bytes),
         "over_segmentation": over,
         "under_segmentation": under,
@@ -177,6 +183,9 @@ def flat(summary: dict[str, Any], method: str, variant: str) -> dict[str, Any]:
         "boundary_precision": summary["boundary"]["precision"],
         "boundary_recall": summary["boundary"]["recall"],
         "boundary_f1": summary["boundary"]["f1"],
+        "accuracy": summary["paper_metrics"]["accuracy"],
+        "f1_score": summary["paper_metrics"]["f1"],
+        "perfection": summary["paper_metrics"]["perfection"],
         "coverage": summary["coverage"],
         "over_segmentation": summary["over_segmentation"],
         "under_segmentation": summary["under_segmentation"],
@@ -197,6 +206,7 @@ def protocol_value_avg(protocol_rows: list[dict[str, Any]]) -> dict[str, Any]:
         "evaluable_rate": mean(row["evaluable_rate"] for row in protocol_rows),
         "exact": {key: mean(row["exact"][key] for row in protocol_rows) for key in ("precision", "recall", "f1", "jaccard")},
         "boundary": {key: mean(row["boundary"][key] for row in protocol_rows) for key in ("precision", "recall", "f1", "jaccard")},
+        "paper_metrics": average_metrics(row["paper_metrics"] for row in protocol_rows),
         "coverage": mean(row["coverage"] for row in protocol_rows),
         "over_segmentation": sum(row["over_segmentation"] for row in protocol_rows),
         "under_segmentation": sum(row["under_segmentation"] for row in protocol_rows),
@@ -220,6 +230,7 @@ def macro_non_empty(protocol_rows: list[dict[str, Any]]) -> dict[str, Any]:
     boundary_recall = metric("boundary", "recall")
     return {
         "group": "Macro Non-Empty",
+        "paper_metrics": average_metrics(row["paper_metrics"] for row in protocol_rows),
         "packets": sum(row["packets"] for row in protocol_rows),
         "evaluable_packets": sum(row["evaluable_packets"] for row in protocol_rows),
         "evaluable_rate": mean(row["evaluable_rate"] for row in protocol_rows),
@@ -248,14 +259,20 @@ def write_markdown(path: Path, rows: list[dict[str, Any]]) -> None:
         "",
         "Bit-field metrics are intentionally excluded. `end` offsets are normalized to inclusive ranges.",
         "",
-        "| Method | Variant | Group | Packets | Evaluable | Exact F1 | Boundary-hit F1 | Coverage | Over-seg. | Under-seg. |",
-        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "Accuracy, F1-score, and Perfection follow V7. Legacy exact-field scores remain in JSON/CSV.",
+        "",
+        "| Method | Variant | Group | Packets | Evaluable | Accuracy | F1-score | Perfection | Coverage | Over-seg. | Under-seg. |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in rows:
+        formatted = {**row, **{
+            key: "N/A" if row[key] is None else f"{row[key]:.4f}"
+            for key in ("accuracy", "f1_score", "perfection")
+        }}
         lines.append(
             "| {method} | {variant} | {group} | {packets} | {evaluable_packets} | "
-            "{exact_f1:.4f} | {boundary_f1:.4f} | {coverage:.4f} | "
-            "{over_segmentation} | {under_segmentation} |".format(**row)
+            "{accuracy} | {f1_score} | {perfection} | {coverage:.4f} | "
+            "{over_segmentation} | {under_segmentation} |".format(**formatted)
         )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
